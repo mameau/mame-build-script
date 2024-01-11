@@ -1,5 +1,8 @@
 #!/bin/bash
-
+#
+# script is generally called from a container (run with podman)
+# if you want to use it outside of this, create modify HOME
+#
 set -e
 
 HOME=/app
@@ -11,24 +14,23 @@ MAXTHRD=$(($(nproc)+1))
 MINTHRD=8
 MAMEGIT=$HOME/${1:-mame}
 PREFIX=$HOME/output
-REPO=https://github.com/sairuk/mame.git
+REPO=https://github.com/mamedev/mame.git
 
 ## MAME settings
 STG=${2:-mame}          # (mame|mess)
 ARCH=$(uname -i)    # mame0227 started failing on this
-TOOLS=0
+TOOLS=1
 REGENIE=1
 NOWERROR=1
 TRIES=1
 TRCNT=1
 NETWORKING=0
-#DEBUG=${DEBUG:-0}
-DEBUG=0
-NOSTRIP=1
+DEBUG=${DEBUG:-0}
+NOSTRIP=0
 PROFILER=0
 OSD=sdl
 #SOURCES=src/mame/pacman/pacman.cpp
-SOURCES=src/mame/namco/namcos11.cpp
+#SOURCES=src/mame/namco/namcos11.cpp
 
 ## COMPILER
 #CC_VER="clang"
@@ -48,8 +50,8 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 ## https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html
 #MAKEOPT+=" SANITIZE=address"
 #MAKEOPT+=" SANITIZE=signed-integer-overflow"
-#MAKEOPT+=" SANITIZE=undefined"
-#
+#MAKEOPT+=" SANITIZE=undefined"   # cannot be built with gcc11 due unsupported (forced) -fno-sanitize=function in genie.lua
+
 #MAKEOPT+=" USE_SYSTEM_LIB_EXPAT=1"
 #MAKEOPT+=" USE_SYSTEM_LIB_ZLIB=1"
 #MAKEOPT+=" USE_SYSTEM_LIB_JPEG=1"
