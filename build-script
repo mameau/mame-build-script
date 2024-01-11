@@ -11,26 +11,30 @@ MAXTHRD=$(($(nproc)+1))
 MINTHRD=8
 MAMEGIT=$HOME/${1:-mame}
 PREFIX=$HOME/output
-REPO=https://github.com/mamedev/mame.git
+REPO=https://github.com/sairuk/mame.git
 
 ## MAME settings
 STG=${2:-mame}          # (mame|mess)
 ARCH=$(uname -i)    # mame0227 started failing on this
-TOOLS=1
+TOOLS=0
 REGENIE=1
 NOWERROR=1
 TRIES=1
 TRCNT=1
 NETWORKING=0
-DEBUG=${DEBUG:-0}
+#DEBUG=${DEBUG:-0}
+DEBUG=0
+NOSTRIP=1
 PROFILER=0
 OSD=sdl
 #SOURCES=src/mame/pacman/pacman.cpp
-#SOURCES=src/mame/namco/namcos11.cpp
+SOURCES=src/mame/namco/namcos11.cpp
 
 ## COMPILER
-GCC_VER="gcc"
-GPP_VER="g++"
+#CC_VER="clang"
+#CPP_VER="clang++"
+CC_VER="gcc"
+CPP_VER="g++"
 
 ### LOGGING
 MAMELOGDIR=$HOME/logs/mame_compile
@@ -41,7 +45,10 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 
 # Testing  github issue
 #MAKEOPT+=" OPTIMIZE=g"
+## https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html
 #MAKEOPT+=" SANITIZE=address"
+#MAKEOPT+=" SANITIZE=signed-integer-overflow"
+#MAKEOPT+=" SANITIZE=undefined"
 #
 #MAKEOPT+=" USE_SYSTEM_LIB_EXPAT=1"
 #MAKEOPT+=" USE_SYSTEM_LIB_ZLIB=1"
@@ -61,8 +68,9 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 [ $TOOLS -eq 1        ] && MAKEOPT+=" TOOLS=${TOOLS}"
 [ $REGENIE -eq 1      ] && MAKEOPT+=" REGENIE=${REGENIE}"
 [ ${NETWORKING} -eq 1 ] && MAKEOPT+=" USE_NETWORK=${NETWORKING} OSD_NET_USE_TAPTUN=1"
-[ ${DEBUG} -eq 1      ] && MAKEOPT+=" STRIP_SYMBOLS=0 DEBUG=${DEBUG}"
 [ ${DEBUG} -eq 0      ] && MAKEOPT+=" STRIP_SYMBOLS=1"
+[ ${NOSTRIP} -eq 1    ] && MAKEOPT+=" STRIP_SYMBOLS=0"
+[ ${DEBUG} -eq 1      ] && MAKEOPT+=" STRIP_SYMBOLS=0 DEBUG=${DEBUG}"
 [ ${PROFILER} -eq 1   ] && MAKEOPT+=" PROFILER=1" 
 [ ! -z ${SOURCES}     ] && MAKEOPT+=" SOURCES=$SOURCES"
 [ ! -z ${OSD}         ] && MAKEOPT+=" OSD=$OSD" 
@@ -70,14 +78,28 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 #### END OPTS
 
 #### CFLAGS
-# fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
-# - https://github.com/mamedev/mame/issues/11922
-# - https://www.reddit.com/r/MAME/comments/18gddpk/mame_261_arm/
-#MAKEOPT+=" CFLAGS=\"-U_FORTIFY_SOURCE -fsigned-char\""
 CFLAGS=""
-CFLAGS+="-U_FORTIFY_SOURCE" # unset UBUNTU default compiler flag
-CFLAGS+=" -fsigned-char" # ARM namcos11 workaround
+CFLAGS+="-U_FORTIFY_SOURCE"     # fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
+CFLAGS+=" -fsigned-char"        # - https://github.com/mamedev/mame/issues/11922 / https://www.reddit.com/r/MAME/comments/18gddpk/mame_261_arm/
+#CFLAGS+=" -fpermissive"
+## SANITIZE CFLAGS
+#CFLAGS+=" -fsanitize=integer,signed-integer-overflow"
+#CFLAGS=" -fno-sanitize=alignment,vptr,function"
 
+# https://clang.llvm.org/docs/CrossCompilation.html
+if [ $CC_VER == "clang" ]
+then
+  echo "CLANG COMPILATION DOESNT WORK YET"
+  sleep 5
+  CFLAGS+=" -m64"
+  CFLAGS+=" --target=armv7a-linux-gnueabi"
+  #CFLAGS+=" -mfloat-abi=hard"
+fi
+
+#### CXXFLAGS
+CXXFLAGS=""
+#CXXFLAGS=" -fno-sanitize=alignment,vptr,function"
+#CXXFLAGS=" -fno-sanitize-recover=all"
 
 [ -f $FAILDROP ] && rm -f $FAILDROP
 
@@ -89,6 +111,7 @@ git checkout master
 git pull
 ## CHECK version, set latest (this is currently unused)
 MAMEVER=${MAMEASK:-$(git tag | tail -n1)}
+MAMEVER=master
 
 REQFAIL=0
 [ -z "${MAMEVER}" ] && echo "Couldn't set MAMEVER, intervene" && REQFAIL=1
@@ -133,7 +156,7 @@ function install {
   
 }
 
-#make clean # As per https://www.mameworld.info/ubbthreads/showthreaded.php?Cat=&Number=389727&page=0&view=&sb=5&o=&fpart=1&vc=1
+make clean # As per https://www.mameworld.info/ubbthreads/showthreaded.php?Cat=&Number=389727&page=0&view=&sb=5&o=&fpart=1&vc=1
 
 ### COMPILE (with retry counts)
 while [ ${TRCNT} -le ${TRIES} ]
@@ -143,17 +166,17 @@ do
   MAMELOG="${MAMELOGDIR}/make_${MAMEVER}_a(${TRCNT})_$(date +'%Y-%m-%d_%H-%M-%S').log"
 
   log "Compiling with ${MAKEOPT} attempt ${TRCNT}" $MAMELOG
-  log "gcc Version: $($GCC_VER --version)" ${MAMELOG}
-  log "CC will be set to $GCC_VER" ${MAMELOG}
-  log "g++ Version: $($GPP_VER --version)" ${MAMELOG}
-  log "CXX will be set to $GPP_VER" ${MAMELOG}
+  log "gcc Version: $($CC_VER --version)" ${MAMELOG}
+  log "CC will be set to $CC_VER" ${MAMELOG}
+  log "g++ Version: $($CPP_VER --version)" ${MAMELOG}
+  log "CXX will be set to $CPP_VER" ${MAMELOG}
 
   ## TEST
   #cp ../genie.lua scripts/
   log "BUILD START" $MAMELOG
 
   ## BUILD
-  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${MAMELOG}
+  make CC=$CC_VER CXX=$CPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${MAMELOG}
   FAIL=$?
 
   log "BUILD END" $MAMELOG
