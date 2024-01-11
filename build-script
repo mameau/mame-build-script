@@ -1,0 +1,176 @@
+#!/bin/bash
+
+## SYSTEM settings
+#MAXTHRD=$(($(grep processor /proc/cpuinfo|wc -l)-1))
+#MAXTHRD=$(($(nproc)+1))
+MAXTHRD=10
+MINTHRD=8
+#MAMEGIT=$HOME/devel/com.github/mame/${1:-mame}
+MAMEGIT=$HOME/${1:-mame}
+PREFIX=$HOME/output
+REPO=https://github.com/mamedev/mame.git
+
+## MAME settings
+STG=${2:-mame}          # (mame|mess)
+ARCH=$(uname -i)    # mame0227 started failing on this
+TOOLS=1
+REGENIE=1
+NOWERROR=1
+TRIES=1
+TRCNT=1
+NETWORKING=0
+DEBUG=${DEBUG:-0}
+PROFILER=0
+OSD=sdl
+#SOURCES=src/mame/pacman/pacman.cpp
+
+## COMPILER
+#GCC_VER="gcc-10"
+#GPP_VER="g++-10"
+GCC_VER="gcc"
+GPP_VER="g++"
+
+### LOGGING
+MAMELOGDIR=$HOME/logs/mame_compile
+[ ! -d ${MAMELOGDIR} ] && mkdir -p ${MAMELOGDIR}
+
+## MAKE options
+MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
+
+# Testing  github issue
+#MAKEOPT+=" OPTIMIZE=g"
+#MAKEOPT+=" SANITIZE=address"
+#
+#MAKEOPT+=" USE_SYSTEM_LIB_EXPAT=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_ZLIB=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_JPEG=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_FLAC=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_SQLITE3=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_PORTMIDI=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_PORTAUDIO=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_UTF8PROC=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_GLM=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_RAPIDJSON=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_PUGIXML=1"
+
+# fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
+MAKEOPT+=" CFLAGS='-U_FORTIFY_SOURCE'"
+MAKEOPT+=" PREFIX=${PREFIX}"
+
+# CUSTOMISABLE
+[ ! -z $STG           ] && MAKEOPT+=" SUBTARGET=${STG}"
+[ $TOOLS -eq 1        ] && MAKEOPT+=" TOOLS=${TOOLS}"
+[ $REGENIE -eq 1      ] && MAKEOPT+=" REGENIE=${REGENIE}"
+[ ${NETWORKING} -eq 1 ] && MAKEOPT+=" USE_NETWORK=${NETWORKING} OSD_NET_USE_TAPTUN=1"
+[ ${DEBUG} -eq 1      ] && MAKEOPT+=" STRIP_SYMBOLS=0 DEBUG=${DEBUG}"
+[ ${DEBUG} -eq 0      ] && MAKEOPT+=" STRIP_SYMBOLS=1"
+[ ${PROFILER} -eq 1   ] && MAKEOPT+=" PROFILER=1" 
+[ ! -z ${SOURCES}     ] && MAKEOPT+=" SOURCES=$SOURCES"
+[ ! -z ${OSD}         ] && MAKEOPT+=" OSD=$OSD" 
+
+if [ ! -f ${MAMEGIT}/.git/config ]
+then
+  git clone ${REPO}
+fi
+
+cd ${MAMEGIT}
+
+## GIT operations
+git checkout master
+git pull
+## CHECK version, set latest (this is currently unused)
+MAMEVER=${MAMEASK:-$(git tag | tail -n1)}
+
+REQFAIL=0
+[ -z "${MAMEVER}" ] && echo "Couldn't set MAMEVER, intervene" && REQFAIL=1
+[ $REQFAIL -ne 0 ] && exit $REQFAIL
+
+git checkout ${MAMEVER}
+
+#git branch
+# wait here and show version coz of sadness
+VERMSG="We are going to compile MAME version ${MAMEVER}"
+echo -n $VERMSG
+sleep 5
+#read -n 1 -p " is this correct? [Y/n]" result
+#case $result in
+#  N|n)
+#    exit 1
+#    ;;
+#  *)
+#    ;;
+#esac
+
+
+function version_check {
+  MAMEVER=$( "${MAMEGIT}/mame" -version | sed -r 's/[0-9]+\.([0-9]+)\s.*/\1/')
+  echo "found build $MAMEVER"
+}
+
+function install {
+
+  version_check
+  MAMEDEST=$HOME/games/emulator-mame${MAMEVER}
+
+  echo "installing to $MAMEDEST"
+  mkdir -p "${MAMEDEST}"
+
+  cd ${MAMEGIT}
+  TOOLSLUA=$(awk -F'"' '/project/{print $2}' scripts/src/tools.lua)
+  for _file in mame $TOOLSLUA
+  do
+    #echo $_file
+    if [ -f $_file ]
+    then
+      cp $_file "${MAMEDEST}"
+    fi
+  done
+
+  IGNOREDIR=(3rdparty android-project attic benchmarks docs doxygen projects regtests scripts src tests .git .github)
+  MAMEDIRS=$(find -maxdepth 1 -type d)
+  for DIR in ${MAMEDIRS[@]}
+  do
+    DIR=$(basename $DIR)
+    echo "${IGNOREDIR[@]}" | grep $DIR &>/dev/null
+    if [ $? -ne 0 ]
+    then
+      #echo $DIR
+      cp -dr ${MAMEGIT}/$DIR "${MAMEDEST}"
+    fi
+  done
+}
+
+make clean
+# As per https://www.mameworld.info/ubbthreads/showthreaded.php?Cat=&Number=389727&page=0&view=&sb=5&o=&fpart=1&vc=1
+
+### COMPILE (with retry counts)
+
+while [ ${TRCNT} -le ${TRIES} ]
+do
+  FAIL=1
+  ## LOGNAME set log name for attempt
+  MAMELOG="${MAMELOGDIR}/make_${MAMEVER}_a(${TRCNT})_$(date +'%Y-%m-%d_%H-%M-%S').log"
+
+  echo "Compiling with ${MAKEOPT} attempt ${TRCNT}" | tee -a ${MAMELOG}
+  echo "gcc Version: $($GCC_VER --version)" | tee -a ${MAMELOG}
+  echo "CC will be set to $GCC_VER" | tee -a ${MAMELOG}
+  echo "g++ Version: $($GPP_VER --version)" | tee -a ${MAMELOG}
+  echo "CXX will be set to $GPP_VER" | tee -a ${MAMELOG}
+
+  ## TEST
+  #cp ../genie.lua scripts/
+
+  ## BUILD
+  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} -j ${MAXTHRD} 2>&1 | tee -a ${MAMELOG}
+  FAIL=$?
+
+  echo "END $(date +'%Y-%m-%d %H:%M:%S')" | tee -a ${MAMELOG}
+  TRCNT=$(( ${TRCNT} + 1 ))
+  ## If compile was successful exit
+  if [ $FAIL -eq 0 ] 
+  then
+    install
+    exit $FAIL
+  fi
+done
+
