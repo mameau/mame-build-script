@@ -1,11 +1,14 @@
 #!/bin/bash
 
+set -e
+
+HOME=/app
+FAILDROP=$HOME/.buildfail # for containers always returning 0
+
 ## SYSTEM settings
-#MAXTHRD=$(($(grep processor /proc/cpuinfo|wc -l)-1))
-#MAXTHRD=$(($(nproc)+1))
-MAXTHRD=10
+MAXTHRD=$(($(nproc)+1))
+#MAXTHRD=10
 MINTHRD=8
-#MAMEGIT=$HOME/devel/com.github/mame/${1:-mame}
 MAMEGIT=$HOME/${1:-mame}
 PREFIX=$HOME/output
 REPO=https://github.com/mamedev/mame.git
@@ -23,10 +26,9 @@ DEBUG=${DEBUG:-0}
 PROFILER=0
 OSD=sdl
 #SOURCES=src/mame/pacman/pacman.cpp
+#SOURCES=src/mame/namco/namcos11.cpp
 
 ## COMPILER
-#GCC_VER="gcc-10"
-#GPP_VER="g++-10"
 GCC_VER="gcc"
 GPP_VER="g++"
 
@@ -53,11 +55,8 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 #MAKEOPT+=" USE_SYSTEM_LIB_RAPIDJSON=1"
 #MAKEOPT+=" USE_SYSTEM_LIB_PUGIXML=1"
 
-# fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
-MAKEOPT+=" CFLAGS='-U_FORTIFY_SOURCE'"
-MAKEOPT+=" PREFIX=${PREFIX}"
-
 # CUSTOMISABLE
+[ ! -z $PREFIX        ] && MAKEOPT+=" PREFIX=${PREFIX}"
 [ ! -z $STG           ] && MAKEOPT+=" SUBTARGET=${STG}"
 [ $TOOLS -eq 1        ] && MAKEOPT+=" TOOLS=${TOOLS}"
 [ $REGENIE -eq 1      ] && MAKEOPT+=" REGENIE=${REGENIE}"
@@ -68,11 +67,21 @@ MAKEOPT+=" PREFIX=${PREFIX}"
 [ ! -z ${SOURCES}     ] && MAKEOPT+=" SOURCES=$SOURCES"
 [ ! -z ${OSD}         ] && MAKEOPT+=" OSD=$OSD" 
 
-if [ ! -f ${MAMEGIT}/.git/config ]
-then
-  git clone ${REPO}
-fi
+#### END OPTS
 
+#### CFLAGS
+# fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
+# - https://github.com/mamedev/mame/issues/11922
+# - https://www.reddit.com/r/MAME/comments/18gddpk/mame_261_arm/
+#MAKEOPT+=" CFLAGS=\"-U_FORTIFY_SOURCE -fsigned-char\""
+CFLAGS=""
+CFLAGS+="-U_FORTIFY_SOURCE" # unset UBUNTU default compiler flag
+CFLAGS+=" -fsigned-char" # ARM namcos11 workaround
+
+
+[ -f $FAILDROP ] && rm -f $FAILDROP
+
+[ ! -f ${MAMEGIT}/.git/config ] && git clone ${REPO}
 cd ${MAMEGIT}
 
 ## GIT operations
@@ -84,7 +93,6 @@ MAMEVER=${MAMEASK:-$(git tag | tail -n1)}
 REQFAIL=0
 [ -z "${MAMEVER}" ] && echo "Couldn't set MAMEVER, intervene" && REQFAIL=1
 [ $REQFAIL -ne 0 ] && exit $REQFAIL
-
 git checkout ${MAMEVER}
 
 #git branch
@@ -92,85 +100,75 @@ git checkout ${MAMEVER}
 VERMSG="We are going to compile MAME version ${MAMEVER}"
 echo -n $VERMSG
 sleep 5
-#read -n 1 -p " is this correct? [Y/n]" result
-#case $result in
-#  N|n)
-#    exit 1
-#    ;;
-#  *)
-#    ;;
-#esac
 
+log() {
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ${1}"| tee -a "${2}"
+}
+
+drop() {
+  touch $FAILDROP
+}
 
 function version_check {
-  MAMEVER=$( "${MAMEGIT}/mame" -version | sed -r 's/[0-9]+\.([0-9]+)\s.*/\1/')
-  echo "found build $MAMEVER"
+  MAMEVER=$( "${MAMEGIT}/mame" -version | sed -r 's/([0-9]+)\.([0-9]+)\s.*/\1\2/')
+  echo $MAMEVER
 }
 
 function install {
 
-  version_check
+  MAMEVER=$(version_check)
+  [ -z "$MAMEVER" ] && echo "Failed to set MAMEVER, cannot install" && drop && exit 1
   MAMEDEST=$HOME/games/emulator-mame${MAMEVER}
 
   echo "installing to $MAMEDEST"
   mkdir -p "${MAMEDEST}"
 
   cd ${MAMEGIT}
-  TOOLSLUA=$(awk -F'"' '/project/{print $2}' scripts/src/tools.lua)
-  for _file in mame $TOOLSLUA
+  for _file in mame castool chdman floptool imgtool jedutil ldresample ldverify nltool nlwav pngcmp regrep romcmp split srcclean testkeys unidasm
   do
-    #echo $_file
-    if [ -f $_file ]
-    then
-      cp $_file "${MAMEDEST}"
-    fi
+    cp $_file "${MAMEDEST}"
   done
 
-  IGNOREDIR=(3rdparty android-project attic benchmarks docs doxygen projects regtests scripts src tests .git .github)
-  MAMEDIRS=$(find -maxdepth 1 -type d)
-  for DIR in ${MAMEDIRS[@]}
-  do
-    DIR=$(basename $DIR)
-    echo "${IGNOREDIR[@]}" | grep $DIR &>/dev/null
-    if [ $? -ne 0 ]
-    then
-      #echo $DIR
-      cp -dr ${MAMEGIT}/$DIR "${MAMEDEST}"
-    fi
-  done
+  cp -dr ${MAMEGIT}/{artwork,bgfx,plugins,language,ctrlr,keymaps,hash} "${MAMEDEST}"
+  
 }
 
-make clean
-# As per https://www.mameworld.info/ubbthreads/showthreaded.php?Cat=&Number=389727&page=0&view=&sb=5&o=&fpart=1&vc=1
+#make clean # As per https://www.mameworld.info/ubbthreads/showthreaded.php?Cat=&Number=389727&page=0&view=&sb=5&o=&fpart=1&vc=1
 
 ### COMPILE (with retry counts)
-
 while [ ${TRCNT} -le ${TRIES} ]
 do
   FAIL=1
   ## LOGNAME set log name for attempt
   MAMELOG="${MAMELOGDIR}/make_${MAMEVER}_a(${TRCNT})_$(date +'%Y-%m-%d_%H-%M-%S').log"
 
-  echo "Compiling with ${MAKEOPT} attempt ${TRCNT}" | tee -a ${MAMELOG}
-  echo "gcc Version: $($GCC_VER --version)" | tee -a ${MAMELOG}
-  echo "CC will be set to $GCC_VER" | tee -a ${MAMELOG}
-  echo "g++ Version: $($GPP_VER --version)" | tee -a ${MAMELOG}
-  echo "CXX will be set to $GPP_VER" | tee -a ${MAMELOG}
+  log "Compiling with ${MAKEOPT} attempt ${TRCNT}" $MAMELOG
+  log "gcc Version: $($GCC_VER --version)" ${MAMELOG}
+  log "CC will be set to $GCC_VER" ${MAMELOG}
+  log "g++ Version: $($GPP_VER --version)" ${MAMELOG}
+  log "CXX will be set to $GPP_VER" ${MAMELOG}
 
   ## TEST
   #cp ../genie.lua scripts/
+  log "BUILD START" $MAMELOG
 
   ## BUILD
-  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} -j ${MAXTHRD} 2>&1 | tee -a ${MAMELOG}
+  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${MAMELOG}
   FAIL=$?
 
-  echo "END $(date +'%Y-%m-%d %H:%M:%S')" | tee -a ${MAMELOG}
+  log "BUILD END" $MAMELOG
   TRCNT=$(( ${TRCNT} + 1 ))
   ## If compile was successful exit
   if [ $FAIL -eq 0 ] 
   then
+    log "BUILD SUCCESS" $MAMELOG
+    log "INSTALL START" $MAMELOG
     install
-    exit $FAIL
+    log "INSTALL END" $MAMELOG
+  else
+    log "BUILD FAILED" $MAMELOG
+    drop
   fi
+  exit $FAIL
 done
 
