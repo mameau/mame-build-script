@@ -3,20 +3,18 @@
 set -e
 #set -x
 
-HOME=/app
-APP=ares
-FAILDROP=$HOME/.buildfail # for containers always returning 0
+## PROFILE
+PROFILE=${1:-mame}
+[ ! -f $PROFILE ] && echo "Profile does not exist" && exit 1
+source "${PROFILE}"
 
 ## SYSTEM settings
 MAXTHRD=$(($(nproc)+1))
-#MAXTHRD=10
 MINTHRD=8
 APPGIT=$HOME/${1:-$APP}
 PREFIX=$HOME/output
-REPO=https://github.com/ares-emulator/ares.git
 APPUID=$APPUID
 APPGID=$APPGID
-
 
 ## COMPILER
 GCC_VER="gcc"
@@ -26,12 +24,11 @@ GPP_VER="g++"
 LOGDIR=$HOME/logs/$APP_compile
 [ ! -d ${LOGDIR} ] && mkdir -p ${LOGDIR}
 
-## MAKE options
-MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
-#MAKEOPT+=" vulkan=true"
-#MAKEOPT+=" profile=accuracy"
-MAKEOPT+=" profile=performance"
+## DROPFILE
+FAILDROP=$HOME/.buildfail # for containers always returning 0
 
+## MAKE options
+MAKEOPT="${MAKEOPT} -j${MAXTHRD} NOWERROR=${NOWERROR}"
 
 #### END OPTS
 
@@ -56,8 +53,7 @@ REQFAIL=0
 [ $REQFAIL -ne 0 ] && exit $REQFAIL
 git checkout ${APPVER}
 
-#git branch
-# wait here and show version coz of sadness
+# wait here and show version because of sadness
 VERMSG="We are going to compile ${APP} version ${APPVER}"
 echo -n $VERMSG
 sleep 5
@@ -71,36 +67,15 @@ drop() {
 }
 
 function version_check {
-  #APPVER=$( "${APPGIT}/${APP}" -version | sed -r 's/([0-9]+)\.([0-9]+)\s.*/\1\2/')
-  #APPVER=ares-unk
+  APPVER=$( "${APPGIT}/${APP}" -version | sed -r 's/([0-9]+)\.([0-9]+)\s.*/\1\2/')
   echo $APPVER
-}
-
-function install {
-
-  APPVER=$(version_check)
-  [ -z "$APPVER" ] && echo "Failed to set APPVER, cannot install" && drop && exit 1
-  APPDEST=$HOME/games/emulator-${APP}${APPVER}
-
-  echo "installing to $APPDEST"
-  mkdir -p "${APPDEST}"/{Database,Firmware,Shaders}
-
-  cd ${APPGIT}
-  cp desktop-ui/out/* "${APPDEST}/"
-  cp -r ares/Shaders/* "${APPDEST}/Shaders/"
-
-  for _file in Database Firmware
-  do
-    cp -r mia/$_file/* "${APPDEST}/$_file/"
-  done
-  
 }
 
 perms() {
   chown -R $APPUID:$APPGID $HOME
 }
 
-make clean 
+[ $CLEAN -eq 1 ] && make clean 
 
 ### COMPILE (with retry counts)
 while [ ${TRCNT} -le ${TRIES} ]

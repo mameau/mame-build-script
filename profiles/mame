@@ -1,0 +1,87 @@
+APP=mame
+REPO=https://github.com/mamedev/mame.git
+
+## MAME settings
+STG=${2:-mame}          # (mame|mess)
+ARCH=$(uname -i)    # mame0227 started failing on this
+TOOLS=0
+REGENIE=1
+NOWERROR=1
+TRIES=1
+TRCNT=1
+NETWORKING=0
+DEBUG=${DEBUG:-0}
+PROFILER=0
+OSD=sdl
+CLEAN=1
+#SOURCES=src/mame/pacman/pacman.cpp
+#SOURCES=src/mame/namco/namcos11.cpp
+#SOURCES=src/mame/sega/sms.cpp
+
+## MAKE options
+MAKEOPT=""
+
+# Testing  github issue
+#MAKEOPT+=" OPTIMIZE=g"
+#MAKEOPT+=" SANITIZE=address"
+#
+#MAKEOPT+=" USE_SYSTEM_LIB_EXPAT=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_ZLIB=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_JPEG=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_FLAC=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_SQLITE3=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_PORTMIDI=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_PORTAUDIO=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_UTF8PROC=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_GLM=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_RAPIDJSON=1"
+#MAKEOPT+=" USE_SYSTEM_LIB_PUGIXML=1"
+#MAKEOPT+=" USE_LIBSDL=1"
+
+# CUSTOMISABLE
+[ ! -z $PREFIX        ] && MAKEOPT+=" PREFIX=${PREFIX}"
+[ ! -z $STG           ] && MAKEOPT+=" SUBTARGET=${STG}"
+[ $TOOLS -eq 1        ] && MAKEOPT+=" TOOLS=${TOOLS}"
+[ $REGENIE -eq 1      ] && MAKEOPT+=" REGENIE=${REGENIE}"
+[ ${NETWORKING} -eq 1 ] && MAKEOPT+=" USE_NETWORK=${NETWORKING} OSD_NET_USE_TAPTUN=1"
+[ ${DEBUG} -eq 1      ] && MAKEOPT+=" STRIP_SYMBOLS=0 DEBUG=${DEBUG}"
+[ ${DEBUG} -eq 0      ] && MAKEOPT+=" STRIP_SYMBOLS=1"
+[ ${PROFILER} -eq 1   ] && MAKEOPT+=" PROFILER=1" 
+[ ! -z ${SOURCES}     ] && MAKEOPT+=" SOURCES=$SOURCES"
+[ ! -z ${OSD}         ] && MAKEOPT+=" OSD=$OSD" 
+
+#### END OPTS
+
+#### CFLAGS
+# fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
+# - https://github.com/mamedev/mame/issues/11922
+# - https://www.reddit.com/r/MAME/comments/18gddpk/mame_261_arm/
+#MAKEOPT+=" CFLAGS=\"-U_FORTIFY_SOURCE -fsigned-char\""
+CFLAGS=""
+#CFLAGS+="-U_FORTIFY_SOURCE" # unset UBUNTU default compiler flag
+#CFLAGS+=" -fsigned-char" # ARM namcos11 workaround
+
+function install {
+
+  APPVER=$(version_check)
+  [ -z "$APPVER" ] && echo "Failed to set APPVER, cannot install" && drop && exit 1
+  APPDEST=$HOME/games/emulator-${APP}${APPVER}
+
+  echo "installing to $APPDEST"
+  mkdir -p "${APPDEST}"
+
+  cd ${MAMEGIT}
+
+  cp mame "${APPDEST}"
+
+  if [ ${TOOLS} -eq 1 ]
+  then
+    for _file in castool chdman floptool imgtool jedutil ldresample ldverify nltool nlwav pngcmp regrep romcmp split srcclean testkeys unidasm
+    do
+      cp $_file "${APPDEST}"
+    done
+  fi
+
+  cp -dr ${MAMEGIT}/{artwork,bgfx,plugins,language,ctrlr,keymaps,hash} "${APPDEST}"
+  
+}

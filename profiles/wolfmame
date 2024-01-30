@@ -1,0 +1,4 @@
+source ./mame
+
+APP=wolfmame
+REPO=https://github.com/mahlemiut/wolfmame.git

@@ -1,0 +1,31 @@
+#!/bin/bash
+APP=ares
+REPO=https://github.com/ares-emulator/ares.git
+
+CLEAN=1
+
+## MAKE options
+MAKEOPT=""
+#MAKEOPT+=" vulkan=true"
+#MAKEOPT+=" profile=accuracy"
+MAKEOPT+=" profile=performance"
+
+function install {
+
+  APPVER=$(version_check)
+  [ -z "$APPVER" ] && echo "Failed to set APPVER, cannot install" && drop && exit 1
+  APPDEST=$HOME/games/emulator-${APP}${APPVER}
+
+  echo "installing to $APPDEST"
+  mkdir -p "${APPDEST}"/{Database,Firmware,Shaders}
+
+  cd ${APPGIT}
+  cp desktop-ui/out/* "${APPDEST}/"
+  cp -r ares/Shaders/* "${APPDEST}/Shaders/"
+
+  for _file in Database Firmware
+  do
+    cp -r mia/$_file/* "${APPDEST}/$_file/"
+  done
+  
+}
