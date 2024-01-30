@@ -4,110 +4,61 @@ set -e
 #set -x
 
 HOME=/app
+APP=ares
 FAILDROP=$HOME/.buildfail # for containers always returning 0
 
 ## SYSTEM settings
 MAXTHRD=$(($(nproc)+1))
 #MAXTHRD=10
 MINTHRD=8
-MAMEGIT=$HOME/${1:-wolfmame}
+APPGIT=$HOME/${1:-$APP}
 PREFIX=$HOME/output
-REPO=https://github.com/mahlemiut/wolfmame.git
+REPO=https://github.com/ares-emulator/ares.git
+APPUID=$APPUID
+APPGID=$APPGID
 
-## MAME settings
-STG=${2:-mame}          # (mame|mess)
-ARCH=$(uname -i)    # mame0227 started failing on this
-TOOLS=0
-REGENIE=1
-NOWERROR=1
-TRIES=1
-TRCNT=1
-NETWORKING=0
-DEBUG=${DEBUG:-0}
-PROFILER=0
-OSD=sdl
-CLEAN=0
-#SOURCES=src/mame/pacman/pacman.cpp
-#SOURCES=src/mame/namco/namcos11.cpp
-#SOURCES=src/mame/sega/sms.cpp
 
 ## COMPILER
 GCC_VER="gcc"
 GPP_VER="g++"
 
 ### LOGGING
-MAMELOGDIR=$HOME/logs/mame_compile
-[ ! -d ${MAMELOGDIR} ] && mkdir -p ${MAMELOGDIR}
+LOGDIR=$HOME/logs/$APP_compile
+[ ! -d ${LOGDIR} ] && mkdir -p ${LOGDIR}
 
 ## MAKE options
 MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
+#MAKEOPT+=" vulkan=true"
+#MAKEOPT+=" profile=accuracy"
+MAKEOPT+=" profile=performance"
 
-# Testing  github issue
-#MAKEOPT+=" OPTIMIZE=g"
-#MAKEOPT+=" SANITIZE=address"
-#
-#MAKEOPT+=" USE_SYSTEM_LIB_EXPAT=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_ZLIB=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_JPEG=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_FLAC=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_SQLITE3=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_PORTMIDI=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_PORTAUDIO=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_UTF8PROC=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_GLM=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_RAPIDJSON=1"
-#MAKEOPT+=" USE_SYSTEM_LIB_PUGIXML=1"
-#MAKEOPT+=" USE_LIBSDL=1"
-
-# CUSTOMISABLE
-[ ! -z $PREFIX        ] && MAKEOPT+=" PREFIX=${PREFIX}"
-[ ! -z $STG           ] && MAKEOPT+=" SUBTARGET=${STG}"
-[ $TOOLS -eq 1        ] && MAKEOPT+=" TOOLS=${TOOLS}"
-[ $REGENIE -eq 1      ] && MAKEOPT+=" REGENIE=${REGENIE}"
-[ ${NETWORKING} -eq 1 ] && MAKEOPT+=" USE_NETWORK=${NETWORKING} OSD_NET_USE_TAPTUN=1"
-[ ${DEBUG} -eq 1      ] && MAKEOPT+=" STRIP_SYMBOLS=0 DEBUG=${DEBUG}"
-[ ${DEBUG} -eq 0      ] && MAKEOPT+=" STRIP_SYMBOLS=1"
-[ ${PROFILER} -eq 1   ] && MAKEOPT+=" PROFILER=1" 
-[ ! -z ${SOURCES}     ] && MAKEOPT+=" SOURCES=$SOURCES"
-[ ! -z ${OSD}         ] && MAKEOPT+=" OSD=$OSD" 
 
 #### END OPTS
 
-#### CFLAGS
-# fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
-# - https://github.com/mamedev/mame/issues/11922
-# - https://www.reddit.com/r/MAME/comments/18gddpk/mame_261_arm/
-#MAKEOPT+=" CFLAGS=\"-U_FORTIFY_SOURCE -fsigned-char\""
-CFLAGS=""
-#CFLAGS+="-U_FORTIFY_SOURCE" # unset UBUNTU default compiler flag
-#CFLAGS+=" -fsigned-char" # ARM namcos11 workaround
-
-
 [ -f $FAILDROP ] && rm -f $FAILDROP
 
-[ ! -f ${MAMEGIT}/.git/config ] && git clone ${REPO}
-cd ${MAMEGIT}
+[ ! -f ${APPGIT}/.git/config ] && git clone ${REPO} $APP
+cd ${APPGIT}
 
 ## GIT safe.directory WORKAROUND
 GITARGS="--global"
 [ $UID -eq 0 ] && GITARGS="--system"
-git config $GITARGS --add safe.directory $HOME/wolfmame
+git config $GITARGS --add safe.directory $HOME/$APP
 
 ## GIT operations
-git clean -dxf
 git checkout master
 git pull
 ## CHECK version, set latest (this is currently unused)
-MAMEVER=${MAMEASK:-$(git tag | tail -n1)}
+APPVER=${APPASK:-$(git tag | tail -n1)}
 
 REQFAIL=0
-[ -z "${MAMEVER}" ] && echo "Couldn't set MAMEVER, intervene" && REQFAIL=1
+[ -z "${APPVER}" ] && echo "Couldn't set APPVER, intervene" && REQFAIL=1
 [ $REQFAIL -ne 0 ] && exit $REQFAIL
-git checkout ${MAMEVER}
+git checkout ${APPVER}
 
 #git branch
 # wait here and show version coz of sadness
-VERMSG="We are going to compile MAME version ${MAMEVER}"
+VERMSG="We are going to compile ${APP} version ${APPVER}"
 echo -n $VERMSG
 sleep 5
 
@@ -120,70 +71,71 @@ drop() {
 }
 
 function version_check {
-  MAMEVER=$( "${MAMEGIT}/mame" -version | sed -r 's/([0-9]+)\.([0-9]+)\s.*/\1\2/')
-  echo $MAMEVER
+  #APPVER=$( "${APPGIT}/${APP}" -version | sed -r 's/([0-9]+)\.([0-9]+)\s.*/\1\2/')
+  #APPVER=ares-unk
+  echo $APPVER
 }
 
 function install {
 
-  MAMEVER=$(version_check)
-  [ -z "$MAMEVER" ] && echo "Failed to set MAMEVER, cannot install" && drop && exit 1
-  MAMEDEST=$HOME/games/emulator-wolfmame${MAMEVER}
+  APPVER=$(version_check)
+  [ -z "$APPVER" ] && echo "Failed to set APPVER, cannot install" && drop && exit 1
+  APPDEST=$HOME/games/emulator-${APP}${APPVER}
 
-  echo "installing to $MAMEDEST"
-  mkdir -p "${MAMEDEST}"
+  echo "installing to $APPDEST"
+  mkdir -p "${APPDEST}"/{Database,Firmware,Shaders}
 
-  cd ${MAMEGIT}
+  cd ${APPGIT}
+  cp desktop-ui/out/* "${APPDEST}/"
+  cp -r ares/Shaders/* "${APPDEST}/Shaders/"
 
-  cp mame "${MAMEDEST}"
-
-  if [ ${TOOLS} -eq 1 ]
-  then
-    for _file in castool chdman floptool imgtool jedutil ldresample ldverify nltool nlwav pngcmp regrep romcmp split srcclean testkeys unidasm
-    do
-      cp $_file "${MAMEDEST}"
-    done
-  fi
-
-  cp -dr ${MAMEGIT}/{artwork,bgfx,plugins,language,ctrlr,keymaps,hash} "${MAMEDEST}"
+  for _file in Database Firmware
+  do
+    cp -r mia/$_file/* "${APPDEST}/$_file/"
+  done
   
 }
 
-[ $CLEAN -eq 1 ] && make clean # As per https://www.mameworld.info/ubbthreads/showthreaded.php?Cat=&Number=389727&page=0&view=&sb=5&o=&fpart=1&vc=1
+perms() {
+  chown -R $APPUID:$APPGID $HOME
+}
+
+make clean 
 
 ### COMPILE (with retry counts)
 while [ ${TRCNT} -le ${TRIES} ]
 do
   FAIL=1
   ## LOGNAME set log name for attempt
-  MAMELOG="${MAMELOGDIR}/make_${MAMEVER}_a(${TRCNT})_$(date +'%Y-%m-%d_%H-%M-%S').log"
+  APPLOG="${LOGDIR}/make_${APPVER}_a(${TRCNT})_$(date +'%Y-%m-%d_%H-%M-%S').log"
 
-  log "Compiling with ${MAKEOPT} attempt ${TRCNT}" $MAMELOG
-  log "gcc Version: $($GCC_VER --version)" ${MAMELOG}
-  log "CC will be set to $GCC_VER" ${MAMELOG}
-  log "g++ Version: $($GPP_VER --version)" ${MAMELOG}
-  log "CXX will be set to $GPP_VER" ${MAMELOG}
+  log "Compiling with ${MAKEOPT} attempt ${TRCNT}" $APPLOG
+  log "gcc Version: $($GCC_VER --version)" ${APPLOG}
+  log "CC will be set to $GCC_VER" ${APPLOG}
+  log "g++ Version: $($GPP_VER --version)" ${APPLOG}
+  log "CXX will be set to $GPP_VER" ${APPLOG}
 
   ## TEST
-  #cp ../genie.lua scripts/
-  log "BUILD START" $MAMELOG
+  log "BUILD START" $APPLOG
 
   ## BUILD
-  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${MAMELOG}
+  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${APPLOG}
   FAIL=$?
 
-  log "BUILD END" $MAMELOG
+  log "BUILD END" $APPLOG
   TRCNT=$(( ${TRCNT} + 1 ))
   ## If compile was successful exit
   if [ $FAIL -eq 0 ] 
   then
-    log "BUILD SUCCESS" $MAMELOG
-    log "INSTALL START" $MAMELOG
+    log "BUILD SUCCESS" $APPLOG
+    log "INSTALL START" $APPLOG
     install
-    log "INSTALL END" $MAMELOG
+    log "INSTALL END" $APPLOG
   else
-    log "BUILD FAILED" $MAMELOG
+    log "BUILD FAILED" $APPLOG
     drop
   fi
+  [ $UID -eq 0 ] && perms
   exit $FAIL
 done
+
