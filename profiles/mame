@@ -14,7 +14,7 @@ NETWORKING=0
 DEBUG=${DEBUG:-0}
 PROFILER=0
 OSD=sdl
-CLEAN=0
+CLEAN=1
 #SOURCES=src/mame/pacman/pacman.cpp
 #SOURCES=src/mame/namco/namcos11.cpp
 #SOURCES=src/mame/sega/sms.cpp
@@ -68,8 +68,6 @@ function version_check {
 }
 
 function install {
-  set -x
-
   APPVER=$(version_check)
   [ -z "$APPVER" ] && echo "Failed to set APPVER, cannot install" && drop && exit 1
   APPDEST=$HOME/games/emulator-${APP}${APPVER}

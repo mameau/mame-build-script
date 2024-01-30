@@ -92,7 +92,7 @@ do
   log "BUILD START" $APPLOG
 
   ## BUILD
-  #make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${APPLOG}
+  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${APPLOG}
   FAIL=$?
 
   log "BUILD END" $APPLOG
