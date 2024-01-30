@@ -1,4 +1,5 @@
-source ./mame
+source /app/$(basename $0)/profiles/mame
 
 APP=wolfmame
+APPEXEC=mame
 REPO=https://github.com/mahlemiut/wolfmame.git

@@ -3,14 +3,17 @@
 set -e
 #set -x
 
+HOME=/app
+cd $HOME
+
 ## PROFILE
-PROFILE=${1:-mame}
+PROFILE=$(dirname $0)/profiles/${1:-mame}
 [ ! -f $PROFILE ] && echo "Profile does not exist" && exit 1
 source "${PROFILE}"
 
 ## SYSTEM settings
 MAXTHRD=$(($(nproc)+1))
-MINTHRD=8
+MINTHRD=$(($MAXTHRD/2))
 APPGIT=$HOME/${1:-$APP}
 PREFIX=$HOME/output
 APPUID=$APPUID
@@ -66,11 +69,6 @@ drop() {
   touch $FAILDROP
 }
 
-function version_check {
-  APPVER=$( "${APPGIT}/${APP}" -version | sed -r 's/([0-9]+)\.([0-9]+)\s.*/\1\2/')
-  echo $APPVER
-}
-
 perms() {
   chown -R $APPUID:$APPGID $HOME
 }
@@ -94,7 +92,7 @@ do
   log "BUILD START" $APPLOG
 
   ## BUILD
-  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${APPLOG}
+  #make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${APPLOG}
   FAIL=$?
 
   log "BUILD END" $APPLOG

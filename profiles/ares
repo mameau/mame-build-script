@@ -1,5 +1,5 @@
-#!/bin/bash
 APP=ares
+APPEXEC=$APP
 REPO=https://github.com/ares-emulator/ares.git
 
 CLEAN=1
@@ -9,6 +9,10 @@ MAKEOPT=""
 #MAKEOPT+=" vulkan=true"
 #MAKEOPT+=" profile=accuracy"
 MAKEOPT+=" profile=performance"
+
+function versioncheck {
+  echo $APPVER
+}
 
 function install {
 

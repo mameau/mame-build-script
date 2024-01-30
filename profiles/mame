@@ -1,4 +1,5 @@
 APP=mame
+APPEXEC=$APP
 REPO=https://github.com/mamedev/mame.git
 
 ## MAME settings
@@ -13,7 +14,7 @@ NETWORKING=0
 DEBUG=${DEBUG:-0}
 PROFILER=0
 OSD=sdl
-CLEAN=1
+CLEAN=0
 #SOURCES=src/mame/pacman/pacman.cpp
 #SOURCES=src/mame/namco/namcos11.cpp
 #SOURCES=src/mame/sega/sms.cpp
@@ -61,7 +62,13 @@ CFLAGS=""
 #CFLAGS+="-U_FORTIFY_SOURCE" # unset UBUNTU default compiler flag
 #CFLAGS+=" -fsigned-char" # ARM namcos11 workaround
 
+function version_check {
+  APPVER=$( "${APPGIT}/${APPEXEC}" -version | sed -r 's/([0-9]+)\.([0-9]+)\s.*/\1\2/')
+  echo $APPVER
+}
+
 function install {
+  set -x
 
   APPVER=$(version_check)
   [ -z "$APPVER" ] && echo "Failed to set APPVER, cannot install" && drop && exit 1
@@ -70,9 +77,9 @@ function install {
   echo "installing to $APPDEST"
   mkdir -p "${APPDEST}"
 
-  cd ${MAMEGIT}
+  cd ${APPGIT}
 
-  cp mame "${APPDEST}"
+  cp ${APPEXEC} "${APPDEST}"
 
   if [ ${TOOLS} -eq 1 ]
   then
@@ -82,6 +89,6 @@ function install {
     done
   fi
 
-  cp -dr ${MAMEGIT}/{artwork,bgfx,plugins,language,ctrlr,keymaps,hash} "${APPDEST}"
+  cp -dr ${APPGIT}/{artwork,bgfx,plugins,language,ctrlr,keymaps,hash} "${APPDEST}"
   
 }
