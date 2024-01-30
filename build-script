@@ -1,9 +1,7 @@
 #!/bin/bash
-#
-# script is generally called from a container (run with podman)
-# if you want to use it outside of this, create modify HOME
-#
+
 set -e
+#set -x
 
 HOME=/app
 FAILDROP=$HOME/.buildfail # for containers always returning 0
@@ -12,31 +10,30 @@ FAILDROP=$HOME/.buildfail # for containers always returning 0
 MAXTHRD=$(($(nproc)+1))
 #MAXTHRD=10
 MINTHRD=8
-MAMEGIT=$HOME/${1:-mame}
+MAMEGIT=$HOME/${1:-wolfmame}
 PREFIX=$HOME/output
-REPO=https://github.com/mamedev/mame.git
+REPO=https://github.com/mahlemiut/wolfmame.git
 
 ## MAME settings
 STG=${2:-mame}          # (mame|mess)
 ARCH=$(uname -i)    # mame0227 started failing on this
-TOOLS=1
+TOOLS=0
 REGENIE=1
 NOWERROR=1
 TRIES=1
 TRCNT=1
 NETWORKING=0
 DEBUG=${DEBUG:-0}
-NOSTRIP=0
 PROFILER=0
 OSD=sdl
+CLEAN=0
 #SOURCES=src/mame/pacman/pacman.cpp
 #SOURCES=src/mame/namco/namcos11.cpp
+#SOURCES=src/mame/sega/sms.cpp
 
 ## COMPILER
-#CC_VER="clang"
-#CPP_VER="clang++"
-CC_VER="gcc"
-CPP_VER="g++"
+GCC_VER="gcc"
+GPP_VER="g++"
 
 ### LOGGING
 MAMELOGDIR=$HOME/logs/mame_compile
@@ -47,11 +44,8 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 
 # Testing  github issue
 #MAKEOPT+=" OPTIMIZE=g"
-## https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html
 #MAKEOPT+=" SANITIZE=address"
-#MAKEOPT+=" SANITIZE=signed-integer-overflow"
-#MAKEOPT+=" SANITIZE=undefined"   # cannot be built with gcc11 due unsupported (forced) -fno-sanitize=function in genie.lua
-
+#
 #MAKEOPT+=" USE_SYSTEM_LIB_EXPAT=1"
 #MAKEOPT+=" USE_SYSTEM_LIB_ZLIB=1"
 #MAKEOPT+=" USE_SYSTEM_LIB_JPEG=1"
@@ -63,6 +57,7 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 #MAKEOPT+=" USE_SYSTEM_LIB_GLM=1"
 #MAKEOPT+=" USE_SYSTEM_LIB_RAPIDJSON=1"
 #MAKEOPT+=" USE_SYSTEM_LIB_PUGIXML=1"
+#MAKEOPT+=" USE_LIBSDL=1"
 
 # CUSTOMISABLE
 [ ! -z $PREFIX        ] && MAKEOPT+=" PREFIX=${PREFIX}"
@@ -70,9 +65,8 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 [ $TOOLS -eq 1        ] && MAKEOPT+=" TOOLS=${TOOLS}"
 [ $REGENIE -eq 1      ] && MAKEOPT+=" REGENIE=${REGENIE}"
 [ ${NETWORKING} -eq 1 ] && MAKEOPT+=" USE_NETWORK=${NETWORKING} OSD_NET_USE_TAPTUN=1"
-[ ${DEBUG} -eq 0      ] && MAKEOPT+=" STRIP_SYMBOLS=1"
-[ ${NOSTRIP} -eq 1    ] && MAKEOPT+=" STRIP_SYMBOLS=0"
 [ ${DEBUG} -eq 1      ] && MAKEOPT+=" STRIP_SYMBOLS=0 DEBUG=${DEBUG}"
+[ ${DEBUG} -eq 0      ] && MAKEOPT+=" STRIP_SYMBOLS=1"
 [ ${PROFILER} -eq 1   ] && MAKEOPT+=" PROFILER=1" 
 [ ! -z ${SOURCES}     ] && MAKEOPT+=" SOURCES=$SOURCES"
 [ ! -z ${OSD}         ] && MAKEOPT+=" OSD=$OSD" 
@@ -80,40 +74,31 @@ MAKEOPT="-j${MAXTHRD} NOWERROR=${NOWERROR}"
 #### END OPTS
 
 #### CFLAGS
+# fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
+# - https://github.com/mamedev/mame/issues/11922
+# - https://www.reddit.com/r/MAME/comments/18gddpk/mame_261_arm/
+#MAKEOPT+=" CFLAGS=\"-U_FORTIFY_SOURCE -fsigned-char\""
 CFLAGS=""
-CFLAGS+="-U_FORTIFY_SOURCE"     # fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
-CFLAGS+=" -fsigned-char"        # - https://github.com/mamedev/mame/issues/11922 / https://www.reddit.com/r/MAME/comments/18gddpk/mame_261_arm/
-#CFLAGS+=" -fpermissive"
-## SANITIZE CFLAGS
-#CFLAGS+=" -fsanitize=integer,signed-integer-overflow"
-#CFLAGS=" -fno-sanitize=alignment,vptr,function"
+#CFLAGS+="-U_FORTIFY_SOURCE" # unset UBUNTU default compiler flag
+#CFLAGS+=" -fsigned-char" # ARM namcos11 workaround
 
-# https://clang.llvm.org/docs/CrossCompilation.html
-if [ $CC_VER == "clang" ]
-then
-  echo "CLANG COMPILATION DOESNT WORK YET"
-  sleep 5
-  CFLAGS+=" -m64"
-  CFLAGS+=" --target=armv7a-linux-gnueabi"
-  #CFLAGS+=" -mfloat-abi=hard"
-fi
-
-#### CXXFLAGS
-CXXFLAGS=""
-#CXXFLAGS=" -fno-sanitize=alignment,vptr,function"
-#CXXFLAGS=" -fno-sanitize-recover=all"
 
 [ -f $FAILDROP ] && rm -f $FAILDROP
 
 [ ! -f ${MAMEGIT}/.git/config ] && git clone ${REPO}
 cd ${MAMEGIT}
 
+## GIT safe.directory WORKAROUND
+GITARGS="--global"
+[ $UID -eq 0 ] && GITARGS="--system"
+git config $GITARGS --add safe.directory $HOME/wolfmame
+
 ## GIT operations
+git clean -dxf
 git checkout master
 git pull
 ## CHECK version, set latest (this is currently unused)
 MAMEVER=${MAMEASK:-$(git tag | tail -n1)}
-MAMEVER=master
 
 REQFAIL=0
 [ -z "${MAMEVER}" ] && echo "Couldn't set MAMEVER, intervene" && REQFAIL=1
@@ -143,22 +128,28 @@ function install {
 
   MAMEVER=$(version_check)
   [ -z "$MAMEVER" ] && echo "Failed to set MAMEVER, cannot install" && drop && exit 1
-  MAMEDEST=$HOME/games/emulator-mame${MAMEVER}
+  MAMEDEST=$HOME/games/emulator-wolfmame${MAMEVER}
 
   echo "installing to $MAMEDEST"
   mkdir -p "${MAMEDEST}"
 
   cd ${MAMEGIT}
-  for _file in mame castool chdman floptool imgtool jedutil ldresample ldverify nltool nlwav pngcmp regrep romcmp split srcclean testkeys unidasm
-  do
-    cp $_file "${MAMEDEST}"
-  done
+
+  cp mame "${MAMEDEST}"
+
+  if [ ${TOOLS} -eq 1 ]
+  then
+    for _file in castool chdman floptool imgtool jedutil ldresample ldverify nltool nlwav pngcmp regrep romcmp split srcclean testkeys unidasm
+    do
+      cp $_file "${MAMEDEST}"
+    done
+  fi
 
   cp -dr ${MAMEGIT}/{artwork,bgfx,plugins,language,ctrlr,keymaps,hash} "${MAMEDEST}"
   
 }
 
-make clean # As per https://www.mameworld.info/ubbthreads/showthreaded.php?Cat=&Number=389727&page=0&view=&sb=5&o=&fpart=1&vc=1
+[ $CLEAN -eq 1 ] && make clean # As per https://www.mameworld.info/ubbthreads/showthreaded.php?Cat=&Number=389727&page=0&view=&sb=5&o=&fpart=1&vc=1
 
 ### COMPILE (with retry counts)
 while [ ${TRCNT} -le ${TRIES} ]
@@ -168,17 +159,17 @@ do
   MAMELOG="${MAMELOGDIR}/make_${MAMEVER}_a(${TRCNT})_$(date +'%Y-%m-%d_%H-%M-%S').log"
 
   log "Compiling with ${MAKEOPT} attempt ${TRCNT}" $MAMELOG
-  log "gcc Version: $($CC_VER --version)" ${MAMELOG}
-  log "CC will be set to $CC_VER" ${MAMELOG}
-  log "g++ Version: $($CPP_VER --version)" ${MAMELOG}
-  log "CXX will be set to $CPP_VER" ${MAMELOG}
+  log "gcc Version: $($GCC_VER --version)" ${MAMELOG}
+  log "CC will be set to $GCC_VER" ${MAMELOG}
+  log "g++ Version: $($GPP_VER --version)" ${MAMELOG}
+  log "CXX will be set to $GPP_VER" ${MAMELOG}
 
   ## TEST
   #cp ../genie.lua scripts/
   log "BUILD START" $MAMELOG
 
   ## BUILD
-  make CC=$CC_VER CXX=$CPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${MAMELOG}
+  make CC=$GCC_VER CXX=$GPP_VER ${MAKEOPT} CFLAGS="${CFLAGS}" -j ${MAXTHRD} 2>&1 | tee -a ${MAMELOG}
   FAIL=$?
 
   log "BUILD END" $MAMELOG
@@ -196,4 +187,3 @@ do
   fi
   exit $FAIL
 done
-
