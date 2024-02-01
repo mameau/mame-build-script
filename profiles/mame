@@ -3,14 +3,15 @@ APPEXEC=$APP
 REPO=https://github.com/mamedev/mame.git
 
 ## MAME settings
-STG=${2:-mame}          # (mame|mess)
-ARCH=$(uname -i)    # mame0227 started failing on this
-TOOLS=0
+STG=${2:-mame}          # (mame|mess|tiny)
+ARCH=$(uname -i)        # mame0227 started failing on this
+EMULATOR=1
+TOOLS=1
 REGENIE=1
 NOWERROR=1
 TRIES=1
 TRCNT=1
-NETWORKING=0
+USE_TAPTUN=1
 DEBUG=${DEBUG:-0}
 PROFILER=0
 OSD=sdl
@@ -42,9 +43,10 @@ MAKEOPT=""
 # CUSTOMISABLE
 [ ! -z $PREFIX        ] && MAKEOPT+=" PREFIX=${PREFIX}"
 [ ! -z $STG           ] && MAKEOPT+=" SUBTARGET=${STG}"
+[ $EMULATOR -eq 1     ] && MAKEOPT+=" EMULATOR=${EMULATOR}"
 [ $TOOLS -eq 1        ] && MAKEOPT+=" TOOLS=${TOOLS}"
 [ $REGENIE -eq 1      ] && MAKEOPT+=" REGENIE=${REGENIE}"
-[ ${NETWORKING} -eq 1 ] && MAKEOPT+=" USE_NETWORK=${NETWORKING} OSD_NET_USE_TAPTUN=1"
+[ ${USE_TAPTUN} -eq 1 ] && MAKEOPT+=" USE_TAPTUN=1"
 [ ${DEBUG} -eq 1      ] && MAKEOPT+=" STRIP_SYMBOLS=0 DEBUG=${DEBUG}"
 [ ${DEBUG} -eq 0      ] && MAKEOPT+=" STRIP_SYMBOLS=1"
 [ ${PROFILER} -eq 1   ] && MAKEOPT+=" PROFILER=1" 
@@ -57,10 +59,9 @@ MAKEOPT=""
 # fix for ubuntu see https://docs.mamedev.org/initialsetup/compilingmame.html#gnu-c-library-fortify-source-feature
 # - https://github.com/mamedev/mame/issues/11922
 # - https://www.reddit.com/r/MAME/comments/18gddpk/mame_261_arm/
-#MAKEOPT+=" CFLAGS=\"-U_FORTIFY_SOURCE -fsigned-char\""
 CFLAGS=""
-#CFLAGS+="-U_FORTIFY_SOURCE" # unset UBUNTU default compiler flag
-#CFLAGS+=" -fsigned-char" # ARM namcos11 workaround
+#CFLAGS+="-U_FORTIFY_SOURCE"      # unset UBUNTU default compiler flag
+#CFLAGS+=" -fsigned-char"         # ARM namcos11 workaround, now fixed upstream
 
 function version_check {
   APPVER=$( "${APPGIT}/${APPEXEC}" -version | sed -r 's/([0-9]+)\.([0-9]+)\s.*/\1\2/')
