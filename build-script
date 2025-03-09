@@ -37,6 +37,7 @@ MAKEOPT="${MAKEOPT} -j${MAXTHRD} NOWERROR=${NOWERROR}"
 
 [ -f $FAILDROP ] && rm -f $FAILDROP
 
+[ $APPGIT == "$HOME/mame-HEAD" ] && APPGIT="$HOME/mame"
 [ ! -f ${APPGIT}/.git/config ] && git clone ${REPO} $APP
 cd ${APPGIT}
 
@@ -49,7 +50,13 @@ git config $GITARGS --add safe.directory $HOME/$APP
 git checkout master
 git pull
 ## CHECK version, set latest (this is currently unused)
-APPVER=${APPASK:-$(git tag | tail -n1)}
+if [ $PROFILE == "mame" ]
+then
+  APPVER=${APPASK:-$(git describe --tags | tail -n1)}
+else
+  APPVER=${APPASK:-$(git tag | tail -n1)}
+fi
+[ $APPGIT == "$HOME/mame-HEAD" ] && APPVER=HEAD
 
 REQFAIL=0
 [ -z "${APPVER}" ] && echo "Couldn't set APPVER, intervene" && REQFAIL=1

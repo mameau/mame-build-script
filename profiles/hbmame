@@ -1,0 +1,9 @@
+source /app/$(basename $0)/profiles/mame
+
+APP=hbmame
+APPEXEC=hbmame
+REPO=https://github.com/Robbbert/hbmame
+MAKEOPT=""
+MAKEOPT+=" SYMBOLS=0" 
+MAKEOPT+=" NO_SYMBOLS=1"
+MAKEOPT+=" DEPRECATED=0"
